@@ -1,4 +1,4 @@
-name: Export .NET 8 SDK
+name: Export .NET 8 Build Bundle
 
 on:
   push:
@@ -9,20 +9,64 @@ on:
 jobs:
   export-sdk:
     runs-on: ubuntu-latest
+    env:
+      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+      NUGET_PACKAGES: ${{ runner.temp }}/nuget-packages
     steps:
-      - name: Show installed SDKs
-        run: dotnet --info
-      - name: Package .NET installation
+      - name: Install isolated .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.424
+
+      - name: Restore WPF build dependencies for x64 and x86
+        shell: bash
         run: |
           set -euxo pipefail
-          root="$(dirname "$(readlink -f "$(command -v dotnet)")")"
-          echo "Packaging $root"
-          tar -C "$(dirname "$root")" -czf dotnet-sdk-linux-x64.tar.gz "$(basename "$root")"
-          ls -lh dotnet-sdk-linux-x64.tar.gz
-      - name: Upload SDK archive
+          mkdir -p "$RUNNER_TEMP/restore-probe"
+          cat > "$RUNNER_TEMP/restore-probe/RestoreProbe.csproj" <<'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>WinExe</OutputType>
+              <TargetFramework>net8.0-windows</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <UseWindowsForms>true</UseWindowsForms>
+              <EnableWindowsTargeting>true</EnableWindowsTargeting>
+              <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
+              <SelfContained>true</SelfContained>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
+            </ItemGroup>
+          </Project>
+          EOF
+          "$DOTNET_INSTALL_DIR/dotnet" restore "$RUNNER_TEMP/restore-probe/RestoreProbe.csproj" --packages "$NUGET_PACKAGES"
+          "$DOTNET_INSTALL_DIR/dotnet" --info
+
+      - name: Download approved Get All Emails background
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl --fail --location --retry 4 \
+            'https://developersaccess.com/uploads/domains/samZCvmTwyAQZVcZksJfmdtnKXp0rkfF.webp' \
+            --output "$RUNNER_TEMP/approved-weedleaf.webp"
+          test -s "$RUNNER_TEMP/approved-weedleaf.webp"
+          sha256sum "$RUNNER_TEMP/approved-weedleaf.webp"
+
+      - name: Package isolated build bundle
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RUNNER_TEMP/build-bundle"
+          mv "$DOTNET_INSTALL_DIR" "$RUNNER_TEMP/build-bundle/dotnet"
+          mv "$NUGET_PACKAGES" "$RUNNER_TEMP/build-bundle/nuget-packages"
+          cp "$RUNNER_TEMP/approved-weedleaf.webp" "$RUNNER_TEMP/build-bundle/approved-weedleaf.webp"
+          tar -C "$RUNNER_TEMP" -czf dotnet8-wpf-build-bundle.tar.gz build-bundle
+          ls -lh dotnet8-wpf-build-bundle.tar.gz
+
+      - name: Upload build bundle
         uses: actions/upload-artifact@v4
         with:
-          name: dotnet-sdk-linux-x64
-          path: dotnet-sdk-linux-x64.tar.gz
+          name: dotnet8-wpf-build-bundle
+          path: dotnet8-wpf-build-bundle.tar.gz
           compression-level: 0
           retention-days: 1
