@@ -1,0 +1,28 @@
+name: Export .NET 8 SDK
+
+on:
+  push:
+    paths:
+      - '.github/workflows/export-dotnet-sdk.yml'
+  workflow_dispatch:
+
+jobs:
+  export-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show installed SDKs
+        run: dotnet --info
+      - name: Package .NET installation
+        run: |
+          set -euxo pipefail
+          root="$(dirname "$(readlink -f "$(command -v dotnet)")")"
+          echo "Packaging $root"
+          tar -C "$(dirname "$root")" -czf dotnet-sdk-linux-x64.tar.gz "$(basename "$root")"
+          ls -lh dotnet-sdk-linux-x64.tar.gz
+      - name: Upload SDK archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-sdk-linux-x64
+          path: dotnet-sdk-linux-x64.tar.gz
+          compression-level: 0
+          retention-days: 1
